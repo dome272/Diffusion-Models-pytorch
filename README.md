@@ -1,4 +1,5 @@
 # Diffusion Models
+
 <a href="https://www.youtube.com/watch?v=HoKDTa5jHvg">
    <img alt="Qries" src="https://user-images.githubusercontent.com/61938694/191407922-f613759e-4bea-4ac9-9135-d053a6312421.jpg"
    width="300">
