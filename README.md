@@ -25,7 +25,7 @@ This is an easy-to-understand implementation of diffusion models within 100 line
 3. ```python ddpm_conditional.py```
 
 ## Sampling
-The following examples show how to sample images using the models trained in the video. You can download the checkpoints for the models [here](https://drive.google.com/file/d/1T28Q8IVP50cWKQef9nb4TzqXx1l5pNjU/view?usp=sharing).
+The following examples show how to sample images using the models trained in the video. You can download the checkpoints for the models [here](https://drive.google.com/drive/folders/1beUSI-edO98i6J9pDR67BKGCfkzUL5DX?usp=sharing).
 ### Unconditional Model
 ```python
     device = "cuda"
