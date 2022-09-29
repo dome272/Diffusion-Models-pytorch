@@ -1,0 +1,7 @@
+*.ipynb_checkpoints
+__pycache__
+wandb/
+datasets/
+models/
+results/
+runs/
