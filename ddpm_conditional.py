@@ -1,4 +1,5 @@
 import argparse
+from contextlib import nullcontext
 import os
 import copy
 import numpy as np
@@ -143,10 +144,10 @@ class Diffusion:
 
 
 
-defaults = SimpleNamespace(    
+config = SimpleNamespace(    
     run_name = "DDPM_conditional",
     epochs = 100,
-    noise_steps=200,
+    noise_steps=1000,
     seed = 42,
     batch_size = 10,
     img_size = 64,
@@ -162,22 +163,31 @@ defaults = SimpleNamespace(
 
 
 def parse_args():
-    argparser = argparse.ArgumentParser(description='Process hyper-parameters')
-    argparser.add_argument('--run_name', type=str, default=defaults.run_name, help='name of the run')
-    argparser.add_argument('--epochs', type=int, default=defaults.epochs, help='number of epochs')
-    argparser.add_argument('--seed', type=int, default=defaults.seed, help='random seed')
-    argparser.add_argument('--batch_size', type=int, default=defaults.batch_size, help='batch size')
-    argparser.add_argument('--img_size', type=int, default=defaults.img_size, help='image size')
-    argparser.add_argument('--num_classes', type=int, default=defaults.num_classes, help='number of classes')
-    argparser.add_argument('--dataset_path', type=str, default=defaults.dataset_path, help='path to dataset')
-    argparser.add_argument('--device', type=str, default=defaults.device, help='device')
-    argparse.add_argument('--use_wandb', type=bool, default=defaults.use_wandb, help='use wandb')
-    argparser.add_argument('--lr', type=float, default=defaults.lr, help='learning rate')
-    return argparser.parse_args()
+    parser = argparse.ArgumentParser(description='Process hyper-parameters')
+    parser.add_argument('--run_name', type=str, default=config.run_name, help='name of the run')
+    parser.add_argument('--epochs', type=int, default=config.epochs, help='number of epochs')
+    parser.add_argument('--seed', type=int, default=config.seed, help='random seed')
+    parser.add_argument('--batch_size', type=int, default=config.batch_size, help='batch size')
+    parser.add_argument('--img_size', type=int, default=config.img_size, help='image size')
+    parser.add_argument('--num_classes', type=int, default=config.num_classes, help='number of classes')
+    parser.add_argument('--dataset_path', type=str, default=config.dataset_path, help='path to dataset')
+    parser.add_argument('--device', type=str, default=config.device, help='device')
+    parser.add_argument('--use_wandb', type=bool, default=config.use_wandb, help='use wandb')
+    parser.add_argument('--lr', type=float, default=config.lr, help='learning rate')
+    parser.add_argument('--slice_size', type=int, default=config.slice_size, help='slice size')
+    parser.add_argument('--noise_steps', type=int, default=config.noise_steps, help='noise steps')
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+    args = vars(parse_args())
+    
+    for k, v in args.items():
+        setattr(config, k, v)
 
-    train(args)
+    ## seed everything
+    set_seed(config.seed)
+
+    diffuser = Diffusion(config.noise_steps, img_size=config.img_size, num_classes=config.num_classes)
+    with wandb.init(project="train_sd", group="train", config=config) if config.use_wandb else nullcontext():
+        diffuser.fit(config)

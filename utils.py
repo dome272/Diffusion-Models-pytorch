@@ -1,4 +1,4 @@
-import os, shutil
+import os, shutil, random
 from pathlib import Path
 from kaggle import api
 import zipfile
@@ -9,6 +9,20 @@ from PIL import Image
 from fastdownload import FastDownload
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+
+
+def set_seed(s, reproducible=False):
+    "Set random seed for `random`, `torch`, and `numpy` (where available)"
+    try: torch.manual_seed(s)
+    except NameError: pass
+    try: torch.cuda.manual_seed_all(s)
+    except NameError: pass
+    try: np.random.seed(s%(2**32-1))
+    except NameError: pass
+    random.seed(s)
+    if reproducible:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 def untar_data(url, force_download=False, base='./datasets'):
     d = FastDownload(base=base)
