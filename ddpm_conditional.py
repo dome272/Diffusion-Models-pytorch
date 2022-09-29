@@ -18,7 +18,7 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=log
 
 
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, device="cuda"):
+    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, num_classes=10, device="cuda"):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -28,6 +28,8 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
         self.img_size = img_size
+        self.model = UNet_conditional(num_classes=num_classes).to(device)
+        self.ema_model = copy.deepcopy(self.model).eval().requires_grad_(False)
         self.device = device
 
     def prepare_noise_schedule(self):
@@ -41,15 +43,17 @@ class Diffusion:
 
     def sample_timesteps(self, n):
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
-
-    def sample(self, model, n, labels, cfg_scale=3):
+    
+    @torch.inference_mode()
+    def sample(self, use_ema, n, labels, cfg_scale=3):
         logging.info(f"Sampling {n} new images....")
+        model = self.ema_model if use_ema else self.model
         model.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
-                predicted_noise = model(x, t, labels)
+                predicted_noise = self.model(x, t, labels)
                 if cfg_scale > 0:
                     uncond_predicted_noise = model(x, t, None)
                     predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
@@ -61,70 +65,87 @@ class Diffusion:
                 else:
                     noise = torch.zeros_like(x)
                 x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
-        model.train()
         x = (x.clamp(-1, 1) + 1) / 2
         x = (x * 255).type(torch.uint8)
         return x
 
 
-def train(args):
-    setup_logging(args.run_name)
-    device = args.device
-    train_dataloader, val_dataloader = get_data(args)
-    model = UNet_conditional(num_classes=args.num_classes).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    mse = nn.MSELoss()
-    diffusion = Diffusion(noise_steps=args.noise_steps, img_size=args.img_size, device=device)
-    logger = SummaryWriter(os.path.join("runs", args.run_name))
-    l = len(train_dataloader)
-    ema = EMA(0.995)
-    ema_model = copy.deepcopy(model).eval().requires_grad_(False)
-
-    for epoch in range(args.epochs):
-        logging.info(f"Starting epoch {epoch}:")
-        pbar = tqdm(train_dataloader)
+    def one_epoch(self, train=True, use_wandb=False):
+        avg_loss = 0.
+        if train: self.model.train()
+        else: self.model.eval()
+        pbar = tqdm(self.train_dataloader)
         for i, (images, labels) in enumerate(pbar):
-            with torch.autocast("cuda"):
-                images = images.to(device)
-                labels = labels.to(device)
-                t = diffusion.sample_timesteps(images.shape[0]).to(device)
-                x_t, noise = diffusion.noise_images(images, t)
+            with torch.autocast("cuda") and (torch.inference_mode() if not train else torch.enable_grad()):
+                images = images.to(self.device)
+                labels = labels.to(self.device)
+                t = self.sample_timesteps(images.shape[0]).to(self.device)
+                x_t, noise = self.noise_images(images, t)
                 if np.random.random() < 0.1:
                     labels = None
-                predicted_noise = model(x_t, t, labels)
-                loss = mse(noise, predicted_noise)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                ema.step_ema(ema_model, model)
+                predicted_noise = self.model(x_t, t, labels)
+                loss = self.mse(noise, predicted_noise)
+                avg_loss += loss
+                if train:
+                    self.optimizer.zero_grad()
+                    self.scheduler.step()
+                    loss.backward()
+                    self.optimizer.step()
+                    self.ema.step_ema(self.ema_model, self.model)
 
                 pbar.set_postfix(MSE=loss.item())
-                if args.use_wandb:
-                    wandb.log({"MSE": loss.item()})
-                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+                if use_wandb and train:
+                    wandb.log({"train_mse": loss.item(),
+                               "learning_rate": self.scheduler.get_last_lr()[0]})
+        
+        return avg_loss.mean().item()
 
-        if epoch % 1 == 0:
-            labels = torch.arange(10).long().to(device)
-            sampled_images = diffusion.sample(model, n=len(labels), labels=labels)
-            ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
+    @torch.inference_mode()
+    def log_images(self, run_name, epoch, use_wandb=False):
+        labels = torch.arange(10).long().to(self.device)
+        sampled_images = self.sample(use_ema=False, n=len(labels), labels=labels)
+        ema_sampled_images = self.sample(use_ema=True, n=len(labels), labels=labels)
+        plot_images(sampled_images)
+        save_images(sampled_images, os.path.join("results", run_name, f"{epoch}.jpg"))
+        save_images(ema_sampled_images, os.path.join("results", run_name, f"{epoch}_ema.jpg"))
+        torch.save(self.model.state_dict(), os.path.join("models", run_name, f"ckpt.pt"))
+        torch.save(self.ema_model.state_dict(), os.path.join("models", run_name, f"ema_ckpt.pt"))
+        torch.save(self.optimizer.state_dict(), os.path.join("models", run_name, f"optim.pt"))
+        if use_wandb:
+            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in sampled_images]})
+            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in ema_sampled_images]})
+            at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
+            at.add_dir(os.path.join("models", run_name))
+            wandb.log_artifact(at)
+
+    def fit(self, args):
+        setup_logging(args.run_name)
+        device = args.device
+        self.train_dataloader, self.val_dataloader = get_data(args)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=args.lr, weight_decay=0.001)
+        self.scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=args.lr, 
+                                                 steps_per_epoch=len(self.train_dataloader), epochs=args.epochs)
+        self.mse = nn.MSELoss()
+        self.ema = EMA(0.995)
+
+        for epoch in range(args.epochs):
+            self.model.train()
+            logging.info(f"Starting epoch {epoch}:")
+            _  = self.one_epoch(train=True, use_wandb=args.use_wandb)
+            
+            ## validation
+            avg_loss = self.one_epoch(train=False, use_wandb=args.use_wandb)
             if args.use_wandb:
-                wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in sampled_images]})
-                wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in ema_sampled_images]})
-            plot_images(sampled_images)
-            save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
-            save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
-            torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
-            torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
-            torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
-            if args.use_wandb:
-                at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
-                at.add_dir(os.path.join("models", args.run_name))
-                wandb.log_artifact(at)
+                wandb.log({"val_mse": avg_loss})
+            if epoch % 5 == 0:
+                self.log_images(run_name=args.run_name, epoch=epoch, use_wandb=args.use_wandb)
+
+
 
 
 defaults = SimpleNamespace(    
     run_name = "DDPM_conditional",
-    epochs = 20,
+    epochs = 100,
     noise_steps=200,
     seed = 42,
     batch_size = 10,
@@ -134,6 +155,7 @@ defaults = SimpleNamespace(
     train_folder = "train",
     val_folder = "test",
     device = "cuda",
+    slice_size = 1,
     use_wandb = True,
     fp16 = True,
     lr = 3e-4)
