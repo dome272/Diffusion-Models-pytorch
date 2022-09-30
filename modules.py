@@ -35,7 +35,8 @@ class EMA:
 class SelfAttention(nn.Module):
     def __init__(self, channels):
         super(SelfAttention, self).__init__()
-        self.channels = channe        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
+        self.channels = channels        
+        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
         self.ln = nn.LayerNorm([channels])
         self.ff_self = nn.Sequential(
             nn.LayerNorm([channels]),
