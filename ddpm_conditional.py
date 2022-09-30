@@ -85,16 +85,17 @@ class Diffusion:
                 predicted_noise = self.model(x_t, t, labels)
                 loss = self.mse(noise, predicted_noise)
                 avg_loss += loss
-                if train:
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-                    self.ema.step_ema(self.ema_model, self.model)
-                    self.scheduler.step()
-                pbar.set_postfix(MSE=loss.item())
-                if use_wandb and train:
-                    wandb.log({"train_mse": loss.item(),
-                               "learning_rate": self.scheduler.get_last_lr()[0]})
+            if train:
+                self.optimizer.zero_grad()
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.ema.step_ema(self.ema_model, self.model)
+                self.scheduler.step()
+            pbar.set_postfix(MSE=loss.item())
+            if use_wandb and train:
+                wandb.log({"train_mse": loss.item(),
+                            "learning_rate": self.scheduler.get_last_lr()[0]})
         
         return avg_loss.mean().item()
 
@@ -123,6 +124,7 @@ class Diffusion:
                                                  steps_per_epoch=len(self.train_dataloader), epochs=args.epochs)
         self.mse = nn.MSELoss()
         self.ema = EMA(0.995)
+        self.scaler = torch.cuda.amp.GradScaler()
 
         for epoch in range(args.epochs):
             logging.info(f"Starting epoch {epoch}:")
