@@ -11,8 +11,6 @@ from torch import optim
 from utils import *
 from modules import UNet_conditional, EMA
 import logging
-from torch.utils.tensorboard import SummaryWriter
-
 import wandb
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
@@ -89,11 +87,10 @@ class Diffusion:
                 avg_loss += loss
                 if train:
                     self.optimizer.zero_grad()
-                    self.scheduler.step()
                     loss.backward()
                     self.optimizer.step()
                     self.ema.step_ema(self.ema_model, self.model)
-
+                    self.scheduler.step()
                 pbar.set_postfix(MSE=loss.item())
                 if use_wandb and train:
                     wandb.log({"train_mse": loss.item(),
@@ -106,15 +103,13 @@ class Diffusion:
         labels = torch.arange(10).long().to(self.device)
         sampled_images = self.sample(use_ema=False, n=len(labels), labels=labels)
         ema_sampled_images = self.sample(use_ema=True, n=len(labels), labels=labels)
-        plot_images(sampled_images)
-        save_images(sampled_images, os.path.join("results", run_name, f"{epoch}.jpg"))
-        save_images(ema_sampled_images, os.path.join("results", run_name, f"{epoch}_ema.jpg"))
+        plot_images(sampled_images)  #to display on jupyter if available
         torch.save(self.model.state_dict(), os.path.join("models", run_name, f"ckpt.pt"))
         torch.save(self.ema_model.state_dict(), os.path.join("models", run_name, f"ema_ckpt.pt"))
         torch.save(self.optimizer.state_dict(), os.path.join("models", run_name, f"optim.pt"))
         if use_wandb:
-            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in sampled_images]})
-            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in ema_sampled_images]})
+            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in sampled_images]}, step=epoch)
+            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in ema_sampled_images]}, step=epoch)
             at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
             at.add_dir(os.path.join("models", run_name))
             wandb.log_artifact(at)
@@ -130,7 +125,6 @@ class Diffusion:
         self.ema = EMA(0.995)
 
         for epoch in range(args.epochs):
-            self.model.train()
             logging.info(f"Starting epoch {epoch}:")
             _  = self.one_epoch(train=True, use_wandb=args.use_wandb)
             
@@ -162,7 +156,7 @@ config = SimpleNamespace(
     lr = 3e-4)
 
 
-def parse_args():
+def parse_args(config):
     parser = argparse.ArgumentParser(description='Process hyper-parameters')
     parser.add_argument('--run_name', type=str, default=config.run_name, help='name of the run')
     parser.add_argument('--epochs', type=int, default=config.epochs, help='number of epochs')
@@ -176,14 +170,15 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=config.lr, help='learning rate')
     parser.add_argument('--slice_size', type=int, default=config.slice_size, help='slice size')
     parser.add_argument('--noise_steps', type=int, default=config.noise_steps, help='noise steps')
-    return parser.parse_args()
+    args = vars(parser.parse_args())
+    
+    # update config with parsed args
+    for k, v in args.items():
+        setattr(config, k, v)
 
 
 if __name__ == '__main__':
-    args = vars(parse_args())
-    
-    for k, v in args.items():
-        setattr(config, k, v)
+    parse_args(config)
 
     ## seed everything
     set_seed(config.seed)
