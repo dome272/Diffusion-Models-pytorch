@@ -10,6 +10,10 @@ from fastdownload import FastDownload
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
+def one_param(m):
+    "get model first parameter"
+    return first(m.parameters())
+
 
 def set_seed(s, reproducible=False):
     "Set random seed for `random`, `torch`, and `numpy` (where available)"
@@ -28,6 +32,17 @@ def untar_data(url, force_download=False, base='./datasets'):
     d = FastDownload(base=base)
     return d.get(url, force=force_download, extract_key='data')
 
+
+def get_alphabet(args):
+    get_kaggle_dataset("alphabet", "thomasqazwsxedc/alphabet-characters-fonts-dataset")
+    train_transforms = T.Compose([
+        T.Grayscale(),
+        T.ToTensor(),])
+    train_dataset = datasets.ImageFolder(root="./alphabet/Images/Images/", transform=train_transforms)
+    if args.slice_size>1:
+        train_dataset = torch.utils.data.Subset(train_dataset, indices=range(0, len(train_dataset), args.slice_size))
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    return train_dataloader, None
 
 def get_cifar(cifar100=False, img_size=64):
     "Download and extract CIFAR"

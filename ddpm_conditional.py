@@ -131,10 +131,13 @@ class Diffusion:
             _  = self.one_epoch(train=True, use_wandb=args.use_wandb)
             
             ## validation
-            avg_loss = self.one_epoch(train=False, use_wandb=args.use_wandb)
-            if args.use_wandb:
-                wandb.log({"val_mse": avg_loss})
-            if epoch % 5 == 0:
+            if args.do_validation:
+                avg_loss = self.one_epoch(train=False, use_wandb=args.use_wandb)
+                if args.use_wandb:
+                    wandb.log({"val_mse": avg_loss})
+            
+            # log predicitons
+            if epoch % 10 == 0:
                 self.log_images(run_name=args.run_name, epoch=epoch, use_wandb=args.use_wandb)
 
 
@@ -154,6 +157,7 @@ config = SimpleNamespace(
     device = "cuda",
     slice_size = 1,
     use_wandb = True,
+    do_validation = True, 
     fp16 = True,
     lr = 3e-4)
 
