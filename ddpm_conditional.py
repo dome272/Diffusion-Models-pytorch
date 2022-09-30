@@ -17,7 +17,7 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=log
 
 
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, num_classes=10, device="cuda"):
+    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, num_classes=10, c_in=3, c_out=3, device="cuda"):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -27,9 +27,11 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
         self.img_size = img_size
-        self.model = UNet_conditional(num_classes=num_classes).to(device)
+        self.model = UNet_conditional(c_in, c_out, num_classes=num_classes).to(device)
         self.ema_model = copy.deepcopy(self.model).eval().requires_grad_(False)
         self.device = device
+        self.c_in = c_in
+        self.num_classes = num_classes
 
     def prepare_noise_schedule(self):
         return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
@@ -49,8 +51,8 @@ class Diffusion:
         model = self.ema_model if use_ema else self.model
         model.eval()
         with torch.inference_mode():
-            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
-            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
+            for i in tqdm(reversed(range(1, self.noise_steps, 10)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = self.model(x, t, labels)
                 if cfg_scale > 0:
@@ -101,7 +103,7 @@ class Diffusion:
 
     @torch.inference_mode()
     def log_images(self, run_name, epoch, use_wandb=False):
-        labels = torch.arange(10).long().to(self.device)
+        labels = torch.arange(5).long().to(self.device)
         sampled_images = self.sample(use_ema=False, n=len(labels), labels=labels)
         ema_sampled_images = self.sample(use_ema=True, n=len(labels), labels=labels)
         plot_images(sampled_images)  #to display on jupyter if available
@@ -109,11 +111,11 @@ class Diffusion:
         torch.save(self.ema_model.state_dict(), os.path.join("models", run_name, f"ema_ckpt.pt"))
         torch.save(self.optimizer.state_dict(), os.path.join("models", run_name, f"optim.pt"))
         if use_wandb:
-            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in sampled_images]}, step=epoch)
-            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).cpu().numpy()) for img in ema_sampled_images]}, step=epoch)
-            at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
-            at.add_dir(os.path.join("models", run_name))
-            wandb.log_artifact(at)
+            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in sampled_images]})
+            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in ema_sampled_images]})
+            # at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
+            # at.add_dir(os.path.join("models", run_name))
+            # wandb.log_artifact(at)
 
     def fit(self, args):
         setup_logging(args.run_name)
@@ -137,7 +139,7 @@ class Diffusion:
                     wandb.log({"val_mse": avg_loss})
             
             # log predicitons
-            if epoch % 10 == 0:
+            if epoch % args.log_every_epoch == 0:
                 self.log_images(run_name=args.run_name, epoch=epoch, use_wandb=args.use_wandb)
 
 
@@ -159,6 +161,8 @@ config = SimpleNamespace(
     use_wandb = True,
     do_validation = True, 
     fp16 = True,
+    log_every_epoch = 10,
+    num_workers=10,
     lr = 3e-4)
 
 

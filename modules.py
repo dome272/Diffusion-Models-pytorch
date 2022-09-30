@@ -185,7 +185,7 @@ class UNet(nn.Module):
         return output
     
     def forward(self, x, t):
-        t = t.unsqueeze(-1).to(x.dtype)
+        t = t.unsqueeze(-1)
         t = self.pos_encoding(t, self.time_dim)
         return self.unet_forwad(x, t)
 
@@ -196,8 +196,8 @@ class UNet_conditional(UNet):
         if num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_dim)
 
-    def forward(self, x, t, y):
-        t = t.unsqueeze(-1).to(x.dtype)
+    def forward(self, x, t, y=None):
+        t = t.unsqueeze(-1)
         t = self.pos_encoding(t, self.time_dim)
 
         if y is not None:
