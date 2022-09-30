@@ -10,10 +10,6 @@ from fastdownload import FastDownload
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
-def one_param(m):
-    "get model first parameter"
-    return first(m.parameters())
-
 
 def set_seed(s, reproducible=False):
     "Set random seed for `random`, `torch`, and `numpy` (where available)"

@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def one_param(m):
+    "get model first parameter"
+    return next(iter(m.parameters()))
 
 class EMA:
     def __init__(self, beta):
@@ -168,21 +171,21 @@ class UNet(nn.Module):
         x4 = self.down3(x3, t)
         x4 = self.sa3(x4)
 
-        x = self.bot1(x4)
-        # x = self.bot2(x)
-        x = self.bot3(x)
+        x4 = self.bot1(x4)
+        # x4 = self.bot2(x4)
+        x4 = self.bot3(x4)
 
-        x = self.up1(x, x4, t)
+        x = self.up1(x4, x3, t)
         x = self.sa4(x)
-        x = self.up2(x, x3, t)
+        x = self.up2(x, x2, t)
         x = self.sa5(x)
-        x = self.up3(x, x2, t)
+        x = self.up3(x, x1, t)
         x = self.sa6(x)
-        x = self.outc(x)
-        return x
-
+        output = self.outc(x)
+        return output
+    
     def forward(self, x, t):
-        t = t.unsqueeze(-1).asdtype(x.dtype)
+        t = t.unsqueeze(-1).to(x.dtype)
         t = self.pos_encoding(t, self.time_dim)
         return self.unet_forwad(x, t)
 
@@ -194,7 +197,7 @@ class UNet_conditional(UNet):
             self.label_emb = nn.Embedding(num_classes, time_dim)
 
     def forward(self, x, t, y):
-        t = t.unsqueeze(-1).asdtype(x.dtype)
+        t = t.unsqueeze(-1).to(x.dtype)
         t = self.pos_encoding(t, self.time_dim)
 
         if y is not None:
