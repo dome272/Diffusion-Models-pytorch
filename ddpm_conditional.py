@@ -52,9 +52,9 @@ class Diffusion:
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
-            for i in tqdm(reversed(range(1, self.noise_steps, 10)), position=0):
+            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
-                predicted_noise = self.model(x, t, labels)
+                predicted_noise = model(x, t, labels)
                 if cfg_scale > 0:
                     uncond_predicted_noise = model(x, t, None)
                     predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
@@ -159,7 +159,7 @@ config = SimpleNamespace(
     device = "cuda",
     slice_size = 1,
     use_wandb = True,
-    do_validation = True, 
+    do_validation = True,
     fp16 = True,
     log_every_epoch = 10,
     num_workers=10,
