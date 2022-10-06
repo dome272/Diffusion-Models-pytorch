@@ -10,6 +10,9 @@ from fastdownload import FastDownload
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
+cifar_labels = "airplane,automobile,bird,cat,deer,dog,frog,horse,ship,truck".split(",")
+alphabet_labels = "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z".split(" ")
+
 
 def set_seed(s, reproducible=False):
     "Set random seed for `random`, `torch`, and `numpy` (where available)"
@@ -66,6 +69,8 @@ def get_kaggle_dataset(dataset_path, # Local path to download dataset to
         with zipfile.ZipFile(zipped_file, 'r') as zip_ref:
             zip_ref.extractall(Path(dataset_path))
         zipped_file.unlink()
+
+def show(x): return wandb.Image((x / 255).type(torch.float)).image
 
 def plot_images(images):
     plt.figure(figsize=(32, 32))
