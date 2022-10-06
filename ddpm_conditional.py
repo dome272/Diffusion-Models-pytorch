@@ -6,12 +6,33 @@ import numpy as np
 import torch
 import torch.nn as nn
 from types import SimpleNamespace
-from tqdm import tqdm
+from fastprogress import progress_bar, master_bar
 from torch import optim
 from utils import *
 from modules import UNet_conditional, EMA
 import logging
 import wandb
+
+config = SimpleNamespace(    
+    run_name = "DDPM_conditional",
+    epochs = 100,
+    noise_steps=1000,
+    seed = 42,
+    batch_size = 10,
+    img_size = 64,
+    num_classes = 10,
+    dataset_path = get_cifar(img_size=64),
+    train_folder = "train",
+    val_folder = "test",
+    device = "cuda",
+    slice_size = 1,
+    use_wandb = True,
+    do_validation = True,
+    fp16 = True,
+    log_every_epoch = 10,
+    num_workers=10,
+    lr = 3e-4)
+
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -35,15 +56,16 @@ class Diffusion:
 
     def prepare_noise_schedule(self):
         return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
+    
+    def sample_timesteps(self, n):
+        return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
     def noise_images(self, x, t):
+        "Add noise to images at instant t"
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
         Ɛ = torch.randn_like(x)
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * Ɛ, Ɛ
-
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
     
     @torch.inference_mode()
     def sample(self, use_ema, n, labels, cfg_scale=3):
@@ -52,7 +74,7 @@ class Diffusion:
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
-            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
+            for i in progress_bar(reversed(range(1, self.noise_steps)), total=self.noise_steps-1, leave=False):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
                 if cfg_scale > 0:
@@ -75,7 +97,7 @@ class Diffusion:
         avg_loss = 0.
         if train: self.model.train()
         else: self.model.eval()
-        pbar = tqdm(self.train_dataloader)
+        pbar = progress_bar(self.train_dataloader, leave=False)
         for i, (images, labels) in enumerate(pbar):
             with torch.autocast("cuda") and (torch.inference_mode() if not train else torch.enable_grad()):
                 images = images.to(self.device)
@@ -94,7 +116,7 @@ class Diffusion:
                 self.scaler.update()
                 self.ema.step_ema(self.ema_model, self.model)
                 self.scheduler.step()
-            pbar.set_postfix(MSE=loss.item())
+            pbar.comment = f"MSE={loss.item():2.3f}"
             if use_wandb and train:
                 wandb.log({"train_mse": loss.item(),
                             "learning_rate": self.scheduler.get_last_lr()[0]})
@@ -102,20 +124,26 @@ class Diffusion:
         return avg_loss.mean().item()
 
     @torch.inference_mode()
-    def log_images(self, run_name, epoch, use_wandb=False):
-        labels = torch.arange(5).long().to(self.device)
+    def log_images(self, use_wandb=False):
+        "Log images to wandb and save them to disk"
+        labels = torch.arange(self.num_classes).long().to(self.device)
         sampled_images = self.sample(use_ema=False, n=len(labels), labels=labels)
         ema_sampled_images = self.sample(use_ema=True, n=len(labels), labels=labels)
         plot_images(sampled_images)  #to display on jupyter if available
+        if use_wandb:
+            wandb.log({"sampled_images":     [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in sampled_images]})
+            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in ema_sampled_images]})
+
+
+    def save_model(self, run_name, use_wandb=False, epoch=-1):
+        "Save model locally and on wandb"
         torch.save(self.model.state_dict(), os.path.join("models", run_name, f"ckpt.pt"))
         torch.save(self.ema_model.state_dict(), os.path.join("models", run_name, f"ema_ckpt.pt"))
         torch.save(self.optimizer.state_dict(), os.path.join("models", run_name, f"optim.pt"))
         if use_wandb:
-            wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in sampled_images]})
-            wandb.log({"ema_sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in ema_sampled_images]})
-            # at = wandb.Artifact("model", type="model", metadata={"epoch": epoch})
-            # at.add_dir(os.path.join("models", run_name))
-            # wandb.log_artifact(at)
+            at = wandb.Artifact("model", type="model", description="Model weights for DDPM conditional", metadata={"epoch": epoch})
+            at.add_dir(os.path.join("models", run_name))
+            wandb.log_artifact(at)
 
     def fit(self, args):
         setup_logging(args.run_name)
@@ -128,7 +156,7 @@ class Diffusion:
         self.ema = EMA(0.995)
         self.scaler = torch.cuda.amp.GradScaler()
 
-        for epoch in range(args.epochs):
+        for epoch in progress_bar(range(args.epochs), total=args.epochs, leave=True):
             logging.info(f"Starting epoch {epoch}:")
             _  = self.one_epoch(train=True, use_wandb=args.use_wandb)
             
@@ -140,30 +168,13 @@ class Diffusion:
             
             # log predicitons
             if epoch % args.log_every_epoch == 0:
-                self.log_images(run_name=args.run_name, epoch=epoch, use_wandb=args.use_wandb)
+                self.log_images(use_wandb=args.use_wandb)
+                # self.save_model(run_name=args.run_name, use_wandb=args.use_wandb, epoch=epoch)
+
+        # save model
+        self.save_model(run_name=args.run_name, use_wandb=args.use_wandb, epoch=epoch)
 
 
-
-
-config = SimpleNamespace(    
-    run_name = "DDPM_conditional",
-    epochs = 100,
-    noise_steps=1000,
-    seed = 42,
-    batch_size = 10,
-    img_size = 64,
-    num_classes = 10,
-    dataset_path = get_cifar(img_size=64),
-    train_folder = "train",
-    val_folder = "test",
-    device = "cuda",
-    slice_size = 1,
-    use_wandb = True,
-    do_validation = True,
-    fp16 = True,
-    log_every_epoch = 10,
-    num_workers=10,
-    lr = 3e-4)
 
 
 def parse_args(config):
