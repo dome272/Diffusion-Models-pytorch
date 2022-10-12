@@ -25,7 +25,7 @@ This is an easy-to-understand implementation of diffusion models within 100 line
 3. ```python ddpm_conditional.py```
 
 ## Sampling
-The following examples show how to sample images using the models trained in the video. You can download the checkpoints for the models [here](https://drive.google.com/drive/folders/1beUSI-edO98i6J9pDR67BKGCfkzUL5DX?usp=sharing).
+The following examples show how to sample images using the models trained in the video on the [Landscape Dataset](https://www.kaggle.com/datasets/arnaud58/landscape-pictures). You can download the checkpoints for the models [here](https://drive.google.com/drive/folders/1beUSI-edO98i6J9pDR67BKGCfkzUL5DX?usp=sharing).
 ### Unconditional Model
 ```python
     device = "cuda"
@@ -38,7 +38,7 @@ The following examples show how to sample images using the models trained in the
 ```
 
 ### Conditional Model
-This model was trained on CIFAR-10 64x64 with 10 classes ```airplane:0, auto:1, bird:2, cat:3, deer:4, dog:5, frog:6, horse:7, ship:8, truck:9```
+This model was trained on [CIFAR-10 64x64](https://www.kaggle.com/datasets/joaopauloschuler/cifar10-64x64-resized-via-cai-super-resolution) with 10 classes ```airplane:0, auto:1, bird:2, cat:3, deer:4, dog:5, frog:6, horse:7, ship:8, truck:9```
 ```python
     n = 10
     device = "cuda"
