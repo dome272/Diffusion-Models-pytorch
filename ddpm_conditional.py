@@ -68,9 +68,10 @@ class Diffusion:
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * Ɛ, Ɛ
     
     @torch.inference_mode()
-    def sample(self, use_ema, n, labels, cfg_scale=3):
+    def sample(self, use_ema, labels, cfg_scale=3):
         logging.info(f"Sampling {n} new images....")
         model = self.ema_model if use_ema else self.model
+        n = len(labels)
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
@@ -92,6 +93,13 @@ class Diffusion:
         x = (x * 255).type(torch.uint8)
         return x
 
+    def train_step(self):
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        self.ema.step_ema(self.ema_model, self.model)
+        self.scheduler.step()
 
     def one_epoch(self, train=True, use_wandb=False):
         avg_loss = 0.
@@ -110,25 +118,18 @@ class Diffusion:
                 loss = self.mse(noise, predicted_noise)
                 avg_loss += loss
             if train:
-                self.optimizer.zero_grad()
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.ema.step_ema(self.ema_model, self.model)
-                self.scheduler.step()
-            pbar.comment = f"MSE={loss.item():2.3f}"
-            if use_wandb and train:
-                wandb.log({"train_mse": loss.item(),
-                            "learning_rate": self.scheduler.get_last_lr()[0]})
-        
+                self.train_step()
+                if use_wandb: 
+                    wandb.log({"train_mse": loss.item(),
+                                "learning_rate": self.scheduler.get_last_lr()[0]})
+            pbar.comment = f"MSE={loss.item():2.3f}"        
         return avg_loss.mean().item()
 
-    @torch.inference_mode()
     def log_images(self, use_wandb=False):
         "Log images to wandb and save them to disk"
         labels = torch.arange(self.num_classes).long().to(self.device)
-        sampled_images = self.sample(use_ema=False, n=len(labels), labels=labels)
-        ema_sampled_images = self.sample(use_ema=True, n=len(labels), labels=labels)
+        sampled_images = self.sample(use_ema=False, labels=labels)
+        ema_sampled_images = self.sample(use_ema=True, labels=labels)
         plot_images(sampled_images)  #to display on jupyter if available
         if use_wandb:
             wandb.log({"sampled_images":     [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in sampled_images]})
@@ -148,8 +149,8 @@ class Diffusion:
             at.add_dir(os.path.join("models", run_name))
             wandb.log_artifact(at)
 
-    def fit(self, args):
-        setup_logging(args.run_name)
+    def prepare(self, args):
+        mk_folders(args.run_name)
         device = args.device
         self.train_dataloader, self.val_dataloader = get_data(args)
         self.optimizer = optim.AdamW(self.model.parameters(), lr=args.lr, weight_decay=0.001)
@@ -159,6 +160,7 @@ class Diffusion:
         self.ema = EMA(0.995)
         self.scaler = torch.cuda.amp.GradScaler()
 
+    def fit(self, args):
         for epoch in progress_bar(range(args.epochs), total=args.epochs, leave=True):
             logging.info(f"Starting epoch {epoch}:")
             _  = self.one_epoch(train=True, use_wandb=args.use_wandb)
@@ -209,4 +211,5 @@ if __name__ == '__main__':
 
     diffuser = Diffusion(config.noise_steps, img_size=config.img_size, num_classes=config.num_classes)
     with wandb.init(project="train_sd", group="train", config=config) if config.use_wandb else nullcontext():
+        diffuser.prepare(config)
         diffuser.fit(config)

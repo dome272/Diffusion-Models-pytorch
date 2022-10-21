@@ -70,7 +70,9 @@ def get_kaggle_dataset(dataset_path, # Local path to download dataset to
             zip_ref.extractall(Path(dataset_path))
         zipped_file.unlink()
 
-def show(x): return wandb.Image((x / 255).type(torch.float)).image
+def one_batch(dl):
+    return next(iter(dl))
+        
 
 def plot_images(images):
     plt.figure(figsize=(32, 32))
@@ -113,7 +115,7 @@ def get_data(args):
     return train_dataloader, val_dataset
 
 
-def setup_logging(run_name):
+def mk_folders(run_name):
     os.makedirs("models", exist_ok=True)
     os.makedirs("results", exist_ok=True)
     os.makedirs(os.path.join("models", run_name), exist_ok=True)
