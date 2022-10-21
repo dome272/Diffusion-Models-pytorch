@@ -16,4 +16,5 @@ train_dl, _ = get_alphabet(config)
 adiff = Diffusion(config.noise_steps, img_size=config.img_size, num_classes=config.num_classes, c_in=1, c_out=1)
 
 with wandb.init(project="train_fonts", config=config):
+    adiff.prepare(config)
     adiff.fit(config)
