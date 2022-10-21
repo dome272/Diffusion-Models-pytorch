@@ -6,3 +6,4 @@ models/
 results/
 runs/
 alphabet
+*.pt
