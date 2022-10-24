@@ -50,3 +50,6 @@ This model was trained on [CIFAR-10 64x64](https://www.kaggle.com/datasets/joaop
     x = diffusion.sample(model, n, y, cfg_scale=3)
     plot_images(x)
 ```
+<hr>
+
+A more advanced version of this code can be found [here](https://github.com/tcapelle/Diffusion-Models-pytorch) by [@tcapelle](https://github.com/tcapelle). It introduces better logging, faster & more efficient training and other nice features and is also being followed by a nice [write-up](https://wandb.ai/capecape/train_sd/reports/Training-a-Conditional-Diffusion-model-from-scratch--VmlldzoyODMxNjE3).
