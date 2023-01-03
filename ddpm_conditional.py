@@ -69,9 +69,9 @@ class Diffusion:
     
     @torch.inference_mode()
     def sample(self, use_ema, labels, cfg_scale=3):
+        n = len(labels)
         logging.info(f"Sampling {n} new images....")
         model = self.ema_model if use_ema else self.model
-        n = len(labels)
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
