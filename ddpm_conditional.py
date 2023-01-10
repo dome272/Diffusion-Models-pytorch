@@ -76,9 +76,9 @@ class Diffusion:
     
     @torch.inference_mode()
     def sample(self, use_ema, labels, cfg_scale=3):
+        n = len(labels)
         logging.info(f"Sampling {n} new images....")
         model = self.ema_model if use_ema else self.model
-        n = len(labels)
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
@@ -100,7 +100,7 @@ class Diffusion:
         x = (x * 255).type(torch.uint8)
         return x
 
-    def train_step(self):
+    def train_step(self, loss):
         self.optimizer.zero_grad()
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
@@ -125,7 +125,7 @@ class Diffusion:
                 loss = self.mse(noise, predicted_noise)
                 avg_loss += loss
             if train:
-                self.train_step()
+                self.train_step(loss)
                 if use_wandb: 
                     wandb.log({"train_mse": loss.item(),
                                 "learning_rate": self.scheduler.get_last_lr()[0]})
