@@ -1,13 +1,20 @@
+"""
+This code train a conditional diffusion model on CIFAR.
+It is based on @dome272.
+
+@wandbcode{condition_diffusion}
+"""
+
 import argparse
 from contextlib import nullcontext
 import os
 import copy
 import numpy as np
 import torch
+from torch import optim
 import torch.nn as nn
 from types import SimpleNamespace
 from fastprogress import progress_bar, master_bar
-from torch import optim
 from utils import *
 from modules import UNet_conditional, EMA
 import logging
