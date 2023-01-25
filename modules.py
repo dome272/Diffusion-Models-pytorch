@@ -103,7 +103,7 @@ class Up(nn.Module):
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
 
-        self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        self.up = nn.ConvTranspose2d(in_channels, out_channels, 2, stride=2)
         self.conv = nn.Sequential(
             DoubleConv(in_channels, in_channels, residual=True),
             DoubleConv(in_channels, out_channels, in_channels // 2),
@@ -201,7 +201,6 @@ class UNet_conditional(nn.Module):
 
         self.bot1 = DoubleConv(256, 512)
         self.bot2 = DoubleConv(512, 512)
-        self.bot3 = DoubleConv(512, 256)
 
         self.up1 = Up(512, 128)
         self.sa4 = SelfAttention(128, 16)
