@@ -173,7 +173,6 @@ class UNet(nn.Module):
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
 
         x = self.up1(x4, x3, t)
         x = self.sa4(x)
@@ -201,10 +200,10 @@ class UNet_conditional(nn.Module):
         self.bot1 = DoubleConv(256, 512)
         self.bot2 = DoubleConv(512, 512)
 
-        self.up1 = Up(512, 128)
-        self.sa4 = SelfAttention(128, 16)
-        self.up2 = Up(256, 64)
-        self.sa5 = SelfAttention(64, 32)
+        self.up1 = Up(512, 256)
+        self.sa4 = SelfAttention(256, 16)
+        self.up2 = Up(256, 128)
+        self.sa5 = SelfAttention(128, 32)
         self.up3 = Up(128, 64)
         self.sa6 = SelfAttention(64, 64)
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
@@ -239,7 +238,6 @@ class UNet_conditional(nn.Module):
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
 
         x = self.up1(x4, x3, t)
         x = self.sa4(x)
