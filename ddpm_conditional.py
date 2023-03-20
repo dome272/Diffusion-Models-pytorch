@@ -42,7 +42,7 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=log
 
 
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, num_classes=10, c_in=3, c_out=3, device="cuda"):
+    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, num_classes=10, c_in=3, c_out=3, device="cuda", **kwargs):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -52,7 +52,7 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
         self.img_size = img_size
-        self.model = UNet_conditional(c_in, c_out, num_classes=num_classes).to(device)
+        self.model = UNet_conditional(c_in, c_out, num_classes=num_classes, **kwargs).to(device)
         self.ema_model = copy.deepcopy(self.model).eval().requires_grad_(False)
         self.device = device
         self.c_in = c_in
