@@ -7,18 +7,15 @@ It is based on @dome272.
 
 import argparse
 from contextlib import nullcontext
-import os
-import copy
-import numpy as np
+
 import torch
 from torch import optim
 import torch.nn as nn
-from types import SimpleNamespace
+import numpy as np
 from fastprogress import progress_bar, master_bar
 from utils import *
 from modules import UNet_conditional, EMA
-import logging
-import wandb
+
 
 config = SimpleNamespace(    
     run_name = "DDPM_conditional",
@@ -76,9 +73,9 @@ class Diffusion:
     
     @torch.inference_mode()
     def sample(self, use_ema, labels, cfg_scale=3):
+        model = self.ema_model if use_ema else self.model
         n = len(labels)
         logging.info(f"Sampling {n} new images....")
-        model = self.ema_model if use_ema else self.model
         model.eval()
         with torch.inference_mode():
             x = torch.randn((n, self.c_in, self.img_size, self.img_size)).to(self.device)
