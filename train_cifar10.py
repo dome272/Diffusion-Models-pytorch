@@ -21,7 +21,6 @@ config = SimpleNamespace(
     val_folder = "test",
     device = "cuda",
     slice_size = 1,
-    use_wandb = True,
     do_validation = True,
     fp16 = True,
     log_every_epoch = 10,
