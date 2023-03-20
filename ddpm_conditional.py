@@ -5,14 +5,17 @@ It is based on @dome272.
 @wandbcode{condition_diffusion}
 """
 
-import argparse
+import argparse, logging, copy
+from types import SimpleNamespace
 from contextlib import nullcontext
 
 import torch
 from torch import optim
 import torch.nn as nn
 import numpy as np
-from fastprogress import progress_bar, master_bar
+from fastprogress import progress_bar
+
+import wandb
 from utils import *
 from modules import UNet_conditional, EMA
 
@@ -35,7 +38,7 @@ config = SimpleNamespace(
     fp16 = True,
     log_every_epoch = 10,
     num_workers=10,
-    lr = 3e-4)
+    lr = 5e-3)
 
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
@@ -157,7 +160,7 @@ class Diffusion:
         mk_folders(args.run_name)
         device = args.device
         self.train_dataloader, self.val_dataloader = get_data(args)
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=args.lr, weight_decay=0.001)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=args.lr, eps=1e-5)
         self.scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=args.lr, 
                                                  steps_per_epoch=len(self.train_dataloader), epochs=args.epochs)
         self.mse = nn.MSELoss()
